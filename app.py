@@ -6,10 +6,12 @@ import io
 
 # --- ADSTERRA CONFIGURATION ---
 # Replace these placeholder links with your actual codes from the Adsterra Publisher Dashboard
-ADSTERRA_SMARTLINK = "https://example-adsterra-smartlink.com" 
+ADSTERRA_SMARTLINK = "https://www.profitableratecpmnetwork.com/ht2mnivmg?key=46a0e809bd9560cf22f3e6c3bc983134" 
 ADSTERRA_BANNER_HTML = """
 <div style="text-align:center;">
     <!-- Paste your 728x90 or 300x250 Adsterra Script/Iframe below -->
+    <script async="async" data-cfasync="false" src="https://pl31341379.profitableratecpmnetwork.com/d5ab78a2c49c200d979abfd7d409f186/invoke.js"></script>
+<div id="container-d5ab78a2c49c200d979abfd7d409f186"></div>
     <a href="https://example-adsterra-smartlink.com" target="_blank">
         <img src="https://placeholder.com" alt="Ad"/>
     </a>
