@@ -1,0 +1,12 @@
+# Python environment tracking
+__pycache__/
+*.pyc
+.venv/
+env/
+venv/
+.streamlit/config.toml
+.streamlit/secrets.toml
+
+# Production assets mapping
+.DS_Store
+*.log
