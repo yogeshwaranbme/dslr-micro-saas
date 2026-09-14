@@ -1,7 +1,7 @@
 import streamlit as st
 import cv2
 import numpy as np
-from PIL import Image, ImageEnhance
+from PIL import Image
 import io
 
 # --- ADSTERRA CONFIGURATION ---
@@ -34,34 +34,30 @@ st.components.v1.html(ADSTERRA_BANNER_HTML, height=100)
 
 # --- ADVANCED COLOUR GRADING ENGINE ---
 def apply_colour_grade(pil_image, profile, intensity):
-    # Convert PIL Image to OpenCV BGR format safely
     img_np = np.array(pil_image)
     img_bgr = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
-    
-    # Work strictly on copies to prevent artifacts
     graded = img_bgr.copy()
     
     if profile == "Cinematic Teal & Orange":
-        # Split into YCrCb to isolate color components from geometric structures
         ycrcb = cv2.cvtColor(graded, cv2.COLOR_BGR2YCrCb)
         y, cr, cb = cv2.split(ycrcb)
         
-        # Shift chrominance channels toward cinematic teal & orange ranges
-        cr = cv2.addWeighted(cr, 1.0, np.full_like(cr, 10), 0.0, 0)  # Boost warm tones
-        cb = cv2.addWeighted(cb, 1.0, np.full_like(cb, -10), 0.0, 0) # Balance with cool tones
+        # Shift chrominance safely using numpy to avoid clipping issues
+        cr = cv2.add(cr, 10)
+        cb = cv2.subtract(cb, 10)
         
         graded = cv2.merge((y, cr, cb))
         graded = cv2.cvtColor(graded, cv2.COLOR_YCrCb2BGR)
 
     elif profile == "Moody Vintage / Film":
-        # Adjust individual BGR color matrices to simulate aged analog film stock
-        matrix = np.array([[0.393, 0.769, 0.189],
-                           [0.349, 0.686, 0.168],
-                           [0.272, 0.534, 0.131]])
-        graded = cv2.transform(graded, matrix)
+        # FIXED LINE 53: Convert image to float32 before applying matrix, then clip back to uint8
+        matrix = np.array([[0.131, 0.534, 0.272],
+                           [0.168, 0.686, 0.349],
+                           [0.189, 0.769, 0.393]])
+        graded = cv2.transform(graded.astype(np.float32), matrix)
+        graded = np.clip(graded, 0, 255).astype(np.uint8)
         
     elif profile == "Cyberpunk / Neon":
-        # Shift colors aggressively in the Lab space for highly stylized futuristic pinks/cyans
         lab = cv2.cvtColor(graded, cv2.COLOR_BGR2Lab)
         l, a, b = cv2.split(lab)
         a = cv2.equalizeHist(a)
@@ -69,10 +65,8 @@ def apply_colour_grade(pil_image, profile, intensity):
         graded = cv2.merge((l, a, b))
         graded = cv2.cvtColor(graded, cv2.COLOR_Lab2BGR)
 
-    # Blend the graded image back with the original based on user-selected intensity slider
+    # Blend original and graded image together using intensity factor
     blended_bgr = cv2.addWeighted(graded, intensity, img_bgr, 1.0 - intensity, 0)
-    
-    # Re-convert to standard PIL RGB format
     final_pil = Image.fromarray(cv2.cvtColor(blended_bgr, cv2.COLOR_BGR2RGB))
     
     return final_pil
@@ -83,13 +77,11 @@ uploaded_file = st.file_uploader("Upload your image (JPG/PNG)", type=["jpg", "jp
 if uploaded_file is not None:
     original_image = Image.open(uploaded_file)
     
-    # Setup columns for the comparison UI
     col1, col2 = st.columns(2)
     with col1:
         st.subheader("Original")
         st.image(original_image, use_container_width=True)
         
-    # Sidebar control adjustments specializing in strict non-destructive color changes
     st.sidebar.header("🎨 Color Grading Panel")
     selected_profile = st.sidebar.selectbox(
         "Select Color Profile",
@@ -98,7 +90,6 @@ if uploaded_file is not None:
     
     grade_intensity = st.sidebar.slider("Grading Filter Intensity", 0.1, 1.0, 0.7, step=0.05)
     
-    # Process image strictly in the color matrices
     with st.spinner("Applying premium color grading look..."):
         processed_image = apply_colour_grade(original_image, selected_profile, grade_intensity)
         
@@ -106,7 +97,6 @@ if uploaded_file is not None:
         st.subheader("Color Graded")
         st.image(processed_image, use_container_width=True)
         
-    # --- MONETIZATION WALL ---
     st.write("---")
     st.subheader("📥 Export Final Creation")
     
@@ -116,7 +106,8 @@ if uploaded_file is not None:
     
     st.warning("⚠️ High-resolution processing generates server loads. Please support us by looking at our sponsor link below!")
     
-    col_dl, col_ad = st.columns()
+    # FIXED LINE 103: Added explicit count '2' into st.columns parameter
+    col_dl, col_ad = st.columns(2)
     with col_dl:
         st.download_button(
             label="💾 Download Color Graded Image",
@@ -130,3 +121,4 @@ if uploaded_file is not None:
 # --- BOTTOM AD BANNER ---
 st.write("---")
 st.components.v1.html(ADSTERRA_BANNER_HTML, height=250)
+
