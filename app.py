@@ -1,141 +1,123 @@
 import streamlit as st
-import replicate
-import os
-import requests
-from PIL import Image, ImageFilter
+import cv2
+import numpy as np
+from PIL import Image, ImageEnhance, ImageFilter
 import io
 
-# Ensure API Key exists
-if "REPLICATE_API_TOKEN" not in os.environ:
-    st.error("🔑 REPLICATE_API_TOKEN environment variable not set. Please set it in your Streamlit Cloud Secrets.")
-    st.stop()
+# --- ADSTERRA CONFIGURATION ---
+# Replace these placeholder links with your actual codes from the Adsterra Publisher Dashboard
+ADSTERRA_SMARTLINK = "https://example-adsterra-smartlink.com" 
+ADSTERRA_BANNER_HTML = """
+<div style="text-align:center;">
+    <!-- Paste your 728x90 or 300x250 Adsterra Script/Iframe below -->
+    <a href="https://example-adsterra-smartlink.com" target="_blank">
+        <img src="https://placeholder.com" alt="Ad"/>
+    </a>
+</div>
+"""
 
-st.set_page_config(page_title="DSLR AI Engine", page_icon="📸", layout="centered")
+# --- PAGE CONFIG ---
+st.set_page_config(page_title="DSLR Photo Enhancer AI", layout="centered", page_icon="📸")
 
-# --- REPLACE WITH YOUR ACTUAL GITHUB PAGES URL ---
-# This points directly to where your repository's public WebGL canvas is hosted
-UNITY_WEBGL_URL = "https://github.com/yogeshwaranbme/dslr-micro-saas/blob/main/public/webgl/index.html"
+# Custom CSS to integrate seamlessly
+st.markdown("""
+    <style>
+    .main { background-color: #fafafa; }
+    div.stButton > button:first-child {
+        background-color: #FF4B4B; color: white; border-radius: 8px; width: 100%;
+    }
+    </style>
+""", unsafe_allow_html=True)
 
-# --- INITIALIZE STATE ENGINE ---
-if "step" not in st.session_state:
-    st.session_state.step = "upload"  # Steps: upload -> processing -> ad_gate -> unlocked
-if "original_img" not in st.session_state:
-    st.session_state.original_img = None
-if "blurred_preview" not in st.session_state:
-    st.session_state.blurred_preview = None
-if "hd_url" not in st.session_state:
-    st.session_state.hd_url = None
+st.title("📸 AI DSLR Quality Photo Enhancer")
+st.write("Transform your standard smartphone photos into professional DSLR-looking shots instantly.")
 
-st.title("📸 DSLR Professional AI Enhancer")
-st.caption("Instantly convert grainy mobile photos into crystal clear DSLR-quality captures.")
+# --- TOP AD BANNER ---
+st.components.v1.html(ADSTERRA_BANNER_HTML, height=100)
 
-# --- STEP 1: UPLOAD PIPELINE ---
-if st.session_state.step == "upload":
-    uploaded_file = st.file_uploader("Choose a portrait or photo to enhance...", type=["jpg", "jpeg", "png"])
+# --- IMAGE PIPELINE FUNCTION ---
+def convert_to_dslr(pil_image, sharp_val, color_val, blur_bkg):
+    # 1. Convert to Open CV format for color space handling
+    img_np = np.array(pil_image)
+    img_bgr = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
     
-    if uploaded_file is not None:
-        st.session_state.original_img = Image.open(uploaded_file)
-        
-        # Buffer original bytes for the AI payload
-        buf = io.BytesIO()
-        st.session_state.original_img.save(buf, format="JPEG")
-        st.session_state.img_bytes = buf.getvalue()
-        
-        if st.button("✨ Enhance to DSLR Quality", use_container_width=True):
-            st.session_state.step = "processing"
-            st.rerun()
-
-# --- STEP 2: BACKEND AI PROCESSING ---
-elif st.session_state.step == "processing":
-    st.info("⚙️ AI is sharpening details and building realistic depth-of-field blur...")
-    progress_bar = st.progress(0)
+    # Apply CLAHE (Contrast Limited Adaptive Histogram Equalization) for DSLR-like dynamic range
+    lab = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2LAB)
+    l, a, b = cv2.split(lab)
+    clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8,8))
+    cl = clahe.apply(l)
+    limg = cv2.merge((cl, a, b))
+    enhanced_bgr = cv2.cvtColor(limg, cv2.COLOR_LAB2BGR)
     
-    try:
-        input_data = io.BytesIO(st.session_state.img_bytes)
-        
-        # Fire payload to Replicate using the Real-ESRGAN package
-        # face_enhance=True applies optimized face feature recovery to simulate an authentic DSLR portrait
-        output = replicate.run(
-            "nightmareai/real-esrgan:latest",
-            input={
-                "image": input_data,
-                "scale": 2,
-                "face_enhance": True
-            }
-        )
-        
-        if isinstance(output, list) and len(output) > 0:
-            st.session_state.hd_url = output[0]
-        else:
-            st.session_state.hd_url = output
-            
-        progress_bar.progress(100)
-        
-        # Create a heavily blurred proxy image from the original asset for the ad gate UI
-        st.session_state.blurred_preview = st.session_state.original_img.filter(ImageFilter.GaussianBlur(radius=15))
-        
-        st.session_state.step = "ad_gate"
-        st.rerun()
-        
-    except Exception as e:
-        st.error(f"AI Processing Failed: {str(e)}")
-        if st.button("↩️ Try Again"):
-            st.session_state.step = "upload"
-            st.rerun()
-
-# --- STEP 3: THE UNITY AD GATE ---
-elif st.session_state.step == "ad_gate":
-    st.warning("🔒 Your DSLR photo is ready! Watch a quick video to unlock the HD version.")
+    # Convert back to PIL
+    enhanced_pil = Image.fromarray(cv2.cvtColor(enhanced_bgr, cv2.COLOR_BGR2RGB))
     
+    # 2. Adjust Vibrance/Color
+    color_enhancer = ImageEnhance.Color(enhanced_pil)
+    enhanced_pil = color_enhancer.enhance(color_val) # Boost midtones
+    
+    # 3. Adjust Sharpness/Clarity
+    sharp_enhancer = ImageEnhance.Sharpness(enhanced_pil)
+    enhanced_pil = sharp_enhancer.enhance(sharp_val)
+    
+    # 4. Optional Bokeh/Depth of Field Simulation
+    if blur_bkg:
+        # Subtle unsharp mask to isolate details slightly
+        enhanced_pil = enhanced_pil.filter(ImageFilter.UnsharpMask(radius=2, percent=150, threshold=3))
+        
+    return enhanced_pil
+
+# --- UI COMPONENT ---
+uploaded_file = st.file_uploader("Upload a normal photo (JPG/PNG)", type=["jpg", "jpeg", "png"])
+
+if uploaded_file is not None:
+    original_image = Image.open(uploaded_file)
+    
+    # Multi-column UI for comparison
     col1, col2 = st.columns(2)
     with col1:
-        st.image(st.session_state.original_img, caption="Original Mobile Shot", use_container_width=True)
+        st.subheader("Original")
+        st.image(original_image, use_container_width=True)
+        
+    # Sidebar control adjustments mimicking DSLR features
+    st.sidebar.header("🔧 Pro DSLR Adjustments")
+    sharpness = st.sidebar.slider("Clarity / Sharpness", 1.0, 3.0, 1.8, step=0.1)
+    color_vibrance = st.sidebar.slider("Color Depth (Vibrance)", 1.0, 2.5, 1.3, step=0.1)
+    simulate_bokeh = st.sidebar.checkbox("Simulate Lens Depth of Field", value=True)
+    
+    # Process image
+    with st.spinner("Processing to DSLR standard..."):
+        processed_image = convert_to_dslr(original_image, sharpness, color_vibrance, simulate_bokeh)
+        
     with col2:
-        st.image(st.session_state.blurred_preview, caption="✨ DSLR Premium (Locked)", use_container_width=True)
-
-    # SECURE WEB CALLBACK ENTRY:
-    # Catch custom URL parameters passed back from the inner WebGL iframe upon ad completion
-    params = st.context.query_params
-    if "status" in params and params["status"] == "reward_success":
-        st.context.query_params.clear()  # Purge token to prevent re-execution exploits
-        st.session_state.step = "unlocked"
-        st.rerun()
-
-    # INJECT PRODUCTION NATIVE UNITY AD IFRAME 
-    st.components.v1.html(
-        f"""
-        <iframe src="{UNITY_WEBGL_URL}" 
-                style="width:100%; height:180px; border:none; scrollbar:none; border-radius:10px; background:#f0f2f6;">
-        </iframe>
-        """,
-        height=200
-    )
-
-# --- STEP 4: DELIVER VALUE (UNLOCKED PIPELINE) ---
-elif st.session_state.step == "unlocked":
-    st.balloons()
-    st.success("🎉 High Definition DSLR Enhancement Complete!")
+        st.subheader("DSLR Standard")
+        st.image(processed_image, use_container_width=True)
+        
+    # --- MONETIZATION WALL ---
+    st.write("---")
+    st.subheader("📥 Export Final Creation")
     
-    # Securely retrieve the file from cloud servers directly onto our backend environment
-    try:
-        response = requests.get(st.session_state.hd_url)
-        hd_bytes = response.content
-        
-        st.image(st.session_state.hd_url, caption="📸 Final Pro-Tier DSLR Photo", use_container_width=True)
-        
+    # Setup download button buffer
+    buf = io.BytesIO()
+    processed_image.save(buf, format="JPEG", quality=95)
+    byte_im = buf.getvalue()
+    
+    # Monetization Strategy: Force an Adsterra SmartLink click or show ad alongside download
+    st.warning("⚠️ High-resolution processing generates server loads. Please support us by looking at our sponsor link below!")
+    
+    col_dl, col_ad = st.columns([1, 1])
+    with col_dl:
         st.download_button(
-            label="💾 Save to Camera Roll (HD)",
-            data=hd_bytes,
-            file_name="dslr_enhanced.png",
-            mime="image/png",
-            use_container_width=True
+            label="💾 Download Ultra-HD Image",
+            data=byte_im,
+            file_name="dslr_enhanced.jpg",
+            mime="image/jpeg"
         )
-    except Exception as e:
-        st.error("Could not fetch the enhanced photo from server storage. Please try again.")
-    
-    if st.button("🔄 Enhance Another Photo", use_container_width=True):
-        st.session_state.step = "upload"
-        st.session_state.original_img = None
-        st.session_state.blurred_preview = None
-        st.session_state.hd_url = None
-        st.rerun()
+    with col_ad:
+        # Button navigating directly to Adsterra SmartLink
+        st.markdown(f'<a href="{ADSTERRA_SMARTLINK}" target="_blank"><button style="background-color:#4CAF50; color:white; border:none; padding:10px 24px; border-radius:8px; width:100%; cursor:pointer; font-weight:bold;">🚀 Unlock Maximum Download Speed</button></a>', unsafe_allow_html=True)
+
+# --- BOTTOM AD BANNER ---
+st.write("---")
+st.components.v1.html(ADSTERRA_BANNER_HTML, height=250)
+
