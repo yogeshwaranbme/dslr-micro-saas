@@ -49,7 +49,7 @@ with col2:
     if uploaded_file is not None:
         # Load the user uploaded image
         src_image = Image.open(uploaded_file).convert("RGB")
-        col1.image(src_image, use_column_width=True)
+        col1.image(src_image, use_container_width=True)
         
         # 1. Simulate Shallow Depth of Field (85mm f/1.4 Bokeh)
         # To strictly preserve facial identity/pores without an AI mask, 
@@ -84,7 +84,7 @@ with col2:
         processed_image = Image.merge("RGB", (r, g, b))
         
         # Render processed image displaying preserved textures and zero AI-smoothing artifacts
-        st.image(processed_image, use_column_width=True)
+        st.image(processed_image, use_container_width=True)
         
         # Download button for the processed file
         st.download_button(
@@ -95,4 +95,3 @@ with col2:
         )
     else:
         st.info("Please upload a reference photo in the left panel to trigger the camera emulator engine.")
-
