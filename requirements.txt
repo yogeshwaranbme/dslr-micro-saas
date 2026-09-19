@@ -1,4 +1,10 @@
-streamlit
-opencv-python-headless
-pillow
-numpy
+streamlit>=1.30.0
+mysql-connector-python>=8.3.0
+pandas>=2.0.0
+numpy>=1.24.0
+scikit-learn>=1.3.0
+tensorflow>=2.12.0; sys_platform != 'win32' or python_version < '3.12'
+torch>=2.0.0
+opencv-python>=4.8.0
+requests>=2.31.0
+python-dotenv>=1.0.0
