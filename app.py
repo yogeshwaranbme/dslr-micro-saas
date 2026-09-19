@@ -2,6 +2,9 @@ import streamlit as st
 import sqlite3
 import pandas as pd
 from datetime import datetime
+import imaplib
+import email
+from email.header import decode_header
 
 # --- Database Setup ---
 def init_db():
@@ -53,7 +56,7 @@ st.title("📦 Family E-Commerce Order Tracker")
 st.markdown("Track orders from **Amazon, Flipkart, and Meesho** linked to your family's mobile numbers.")
 
 # Sidebar Navigation
-menu = st.sidebar.selectbox("Navigation", ["Track Orders", "Add New Order (Manual)"])
+menu = st.sidebar.selectbox("Navigation", ["Track Orders", "Add New Order (Manual)", "Sync from Email (IMAP)"])
 
 if menu == "Track Orders":
     st.header("🔍 Track Orders by Mobile Number")
@@ -79,7 +82,6 @@ if menu == "Track Orders":
 
 elif menu == "Add New Order (Manual)":
     st.header("➕ Add a Purchase Order")
-    st.markdown("*(Tip: You can automate this later by integrating Python's email parsing library `imaplib` to read confirmation emails automatically).*")
     
     with st.form("order_form"):
         col1, col2 = st.columns(2)
@@ -109,4 +111,40 @@ elif menu == "Add New Order (Manual)":
                 else:
                     st.error(msg)
             else:
-                    st.error("Please fill in all mandatory fields (Order ID, Mobile Number, Item Name).")
+                st.error("Please fill in all mandatory fields (Order ID, Mobile Number, Item Name).")
+
+elif menu == "Sync from Email (IMAP)":
+    st.header("📥 Sync Orders via Email (`imaplib`)")
+    st.markdown("Connect to your email inbox to scan for e-commerce confirmation emails automatically.")
+    
+    with st.form("imap_form"):
+        imap_server = st.text_input("IMAP Server", value="imap.gmail.com")
+        email_user = st.text_input("Email Address", placeholder="yourname@gmail.com")
+        email_pass = st.text_input("Email App Password", type="password", placeholder="Generated App Password")
+        
+        sync_button = st.form_submit_button("Connect & Scan Inbox")
+        
+        if sync_button:
+            if not email_user or not email_pass:
+                st.error("Please provide both your email address and app password.")
+            else:
+                try:
+                    # Connect to IMAP server securely
+                    with st.spinner("Connecting to inbox via IMAP..."):
+                        mail = imaplib.IMAP4_SSL(imap_server)
+                        mail.login(email_user, email_pass)
+                        mail.select("inbox")
+                        
+                        # Search for unread or all confirmation emails from e-commerce sites
+                        status, messages = mail.search(None, '(OR (OR (FROM "amazon") (FROM "flipkart")) (FROM "meesho"))')
+                        
+                        if status == "OK":
+                            mail_ids = messages[0].split()
+                            st.success(f"Successfully connected! Found {len(mail_ids)} relevant order emails.")
+                            # TODO: Add your loop here to parse email bytes using `email.message_from_bytes()` and extract details into `add_order()`
+                        else:
+                            st.warning("Connected successfully, but no matching order emails found.")
+                            
+                        mail.logout()
+                except Exception as e:
+                    st.error(f"Failed to connect via IMAP: {e}")
