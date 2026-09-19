@@ -1,66 +1,112 @@
 import streamlit as st
+import sqlite3
+import pandas as pd
+from datetime import datetime
 
-st.set_page_config(
-    page_title="CodGuard — Stop Fake COD Orders Before They Ship",
-    page_icon="🛡️",
-    layout="wide",
-)
+# --- Database Setup ---
+def init_db():
+    conn = sqlite3.connect('orders.db')
+    cursor = conn.cursor()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS orders (
+            order_id TEXT PRIMARY KEY,
+            platform TEXT,
+            customer_name TEXT,
+            mobile_number TEXT,
+            item_name TEXT,
+            total_amount REAL,
+            order_status TEXT,
+            order_date TEXT
+        )
+    ''')
+    conn.commit()
+    conn.close()
 
-# Custom Styling to match a modern SaaS look
-st.markdown("""
-    <style>
-    .main-header {
-        font-size: 2.5rem;
-        font-weight: 700;
-        color: #1e293b;
-    }
-    .sub-header {
-        font-size: 1.2rem;
-        color: #64748b;
-    }
-    </style>
-""", unsafe_allow_html=True)
+init_db()
 
-# App Header
-st.markdown('<p class="main-header">CodGuard 🛡️</p>', unsafe_allow_html=True)
-st.markdown('<p class="sub-header">Stop Fake COD Orders Before They Ship</p>', unsafe_allow_html=True)
-st.divider()
+# --- Helper Functions ---
+def add_order(order_id, platform, customer_name, mobile_number, item_name, total_amount, order_status, order_date):
+    try:
+        conn = sqlite3.connect('orders.db')
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO orders (order_id, platform, customer_name, mobile_number, item_name, total_amount, order_status, order_date)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (order_id, platform, customer_name, mobile_number, item_name, total_amount, order_status, order_date))
+        conn.commit()
+        conn.close()
+        return True, "Order added successfully!"
+    except sqlite3.IntegrityError:
+        return False, "Order ID already exists!"
 
-# Sidebar for controls or navigation
-st.sidebar.title("CodGuard Navigation")
-app_mode = st.sidebar.selectbox("Choose Mode", ["Order Verification Dashboard", "Risk Analytics", "Settings"])
+def get_orders_by_mobile(mobile_number):
+    conn = sqlite3.connect('orders.db')
+    query = "SELECT * FROM orders WHERE mobile_number LIKE ?"
+    df = pd.read_sql(query, conn, params=(f"%{mobile_number}%",))
+    conn.close()
+    return df
 
-if app_mode == "Order Verification Dashboard":
-    st.subheader("Verify Incoming Order Risk")
+# --- Streamlit UI ---
+st.set_page_config(page_title="Family Order Tracker", page_icon="📦", layout="wide")
+
+st.title("📦 Family E-Commerce Order Tracker")
+st.markdown("Track orders from **Amazon, Flipkart, and Meesho** linked to your family's mobile numbers.")
+
+# Sidebar Navigation
+menu = st.sidebar.selectbox("Navigation", ["Track Orders", "Add New Order (Manual)"])
+
+if menu == "Track Orders":
+    st.header("🔍 Track Orders by Mobile Number")
     
-    col1, col2 = st.columns(2)
-    with col1:
-        customer_name = st.text_input("Customer Name", "John Doe")
-        phone = st.text_input("Phone Number", "+91 9876543210")
-        pincode = st.text_input("Delivery Pincode", "614625")
+    search_mobile = st.text_input("Enter Mobile Number", placeholder="e.g., 9876543210")
     
-    with col2:
-        order_amount = st.number_input("Order Amount (₹)", min_value=100, value=1499)
-        previous_orders = st.number_input("Past Orders", min_value=0, value=2)
-        rto_history = st.selectbox("Previous RTO (Return to Origin) History", ["None", "Low", "High"])
-
-    if st.button("Analyze Risk Score", type="primary"):
-        # Dummy risk logic for demonstration
-        risk_score = 15 if rto_history == "None" else 85
+    if search_mobile:
+        df_orders = get_orders_by_mobile(search_mobile)
         
-        if risk_score < 40:
-            st.success(f"Low Risk (Score: {risk_score}%). Recommended Action: **Ship Order** ✅")
-        elif risk_score < 75:
-            st.warning(f"Moderate Risk (Score: {risk_score}%). Recommended Action: **Verify via WhatsApp/OTP** ⚠️")
+        if not df_orders.empty:
+            st.success(f"Found {len(df_orders)} order(s) for mobile number: {search_mobile}")
+            
+            # Metrics
+            total_spent = df_orders['total_amount'].sum()
+            col1, col2 = st.columns(2)
+            col1.metric("Total Orders Found", len(df_orders))
+            col2.metric("Total Spent (₹)", f"₹{total_spent:,.2f}")
+            
+            # Display Table
+            st.dataframe(df_orders, use_container_width=True)
         else:
-            st.error(f"High Risk (Score: {risk_score}%). Recommended Action: **Cancel / Require Prepaid** ❌")
+            st.warning("No orders found for this mobile number.")
 
-elif app_mode == "Risk Analytics":
-    st.subheader("RTO & Fraud Trends")
-    st.info("Analytics dashboard will display metrics on prevented RTOs, verified phone numbers, and saved shipping costs.")
-
-else:
-    st.subheader("CodGuard Settings")
-    st.text_input("API Key Integration", "cg_live_************************")
-    st.checkbox("Enable Auto-Verification via WhatsApp", value=True)
-    st.button("Save Changes")
+elif menu == "Add New Order (Manual)":
+    st.header("➕ Add a Purchase Order")
+    st.markdown("*(Tip: You can automate this later by integrating Python's email parsing library `imaplib` to read confirmation emails automatically).*")
+    
+    with st.form("order_form"):
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            order_id = st.text_input("Order ID / Tracking ID")
+            platform = st.selectbox("Platform", ["Amazon", "Flipkart", "Meesho", "Other"])
+            customer_name = st.text_input("Family Member Name")
+            mobile_number = st.text_input("Registered Mobile Number")
+            
+        with col2:
+            item_name = st.text_input("Item Name / Description")
+            total_amount = st.number_input("Total Amount (₹)", min_value=0.0, format="%.2f")
+            order_status = st.selectbox("Order Status", ["Ordered", "Shipped", "Out for Delivery", "Delivered", "Cancelled"])
+            order_date = st.date_input("Order Date", datetime.today())
+            
+        submit_button = st.form_submit_button("Save Order")
+        
+        if submit_button:
+            if order_id and mobile_number and item_name:
+                success, msg = add_order(
+                    order_id, platform, customer_name, mobile_number, 
+                    item_name, total_amount, order_status, str(order_date)
+                )
+                if success:
+                    st.success(msg)
+                else:
+                    st.error(msg)
+            else:
+                    st.error("Please fill in all mandatory fields (Order ID, Mobile Number, Item Name).")
